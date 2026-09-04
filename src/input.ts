@@ -9,6 +9,8 @@ export interface InputState {
   mouseDY: number;
   pointerLocked: boolean;
   clickToStart: boolean;
+  weaponSlot: number | null;
+  scrollWeapon: number;
 }
 
 export function createInput(canvas: HTMLCanvasElement): InputState {
@@ -23,6 +25,8 @@ export function createInput(canvas: HTMLCanvasElement): InputState {
     mouseDY: 0,
     pointerLocked: false,
     clickToStart: false,
+    weaponSlot: null,
+    scrollWeapon: 0,
   };
 
   const keyMap: Record<string, keyof InputState> = {
@@ -36,6 +40,21 @@ export function createInput(canvas: HTMLCanvasElement): InputState {
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Escape') {
       state.pause = true;
+      return;
+    }
+    if (e.code === 'Digit1' || e.code === 'Numpad1') {
+      state.weaponSlot = 1;
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'Digit2' || e.code === 'Numpad2') {
+      state.weaponSlot = 2;
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'Digit3' || e.code === 'Numpad3') {
+      state.weaponSlot = 3;
+      e.preventDefault();
       return;
     }
     const k = keyMap[e.code];
@@ -67,6 +86,12 @@ export function createInput(canvas: HTMLCanvasElement): InputState {
   canvas.addEventListener('mouseup', (e) => {
     if (e.button === 0) state.shoot = false;
   });
+
+  canvas.addEventListener('wheel', (e) => {
+    if (!state.pointerLocked) return;
+    e.preventDefault();
+    state.scrollWeapon += e.deltaY > 0 ? 1 : -1;
+  }, { passive: false });
 
   document.addEventListener('pointerlockchange', () => {
     state.pointerLocked = document.pointerLockElement === canvas;
@@ -105,4 +130,17 @@ export function consumeClickToStart(input: InputState): boolean {
     return true;
   }
   return false;
+}
+
+export function consumeWeaponSwitch(input: InputState): number | null {
+  const s = input.weaponSlot;
+  input.weaponSlot = null;
+  return s;
+}
+
+export function consumeScrollWeapon(input: InputState): number {
+  const s = input.scrollWeapon;
+  input.scrollWeapon = 0;
+  if (s === 0) return 0;
+  return s > 0 ? 1 : -1;
 }

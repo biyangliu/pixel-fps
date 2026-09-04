@@ -1,12 +1,14 @@
-import type { LevelMap } from './map';
+import type { LevelMap, EnemyType } from './map';
 import { isSolid } from './map';
 import type { Player } from './player';
 import { damagePlayer } from './player';
+import { WEAPONS, type WeaponId } from './weapons';
+import { sfxHurt, sfxEnemyHit, sfxEnemyDie } from './audio';
 
 export interface Enemy {
   x: number;
   y: number;
-  type: 'grunt' | 'shooter';
+  type: EnemyType;
   hp: number;
   maxHp: number;
   speed: number;
@@ -14,8 +16,18 @@ export interface Enemy {
   attackCooldown: number;
   hurtFlash: number;
   alive: boolean;
-  /** Animation phase */
   bob: number;
+}
+
+export interface Projectile {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  damage: number;
+  radius: number;
+  life: number;
+  fromEnemy: boolean;
 }
 
 export function createEnemies(map: LevelMap): Enemy[] {
@@ -23,16 +35,27 @@ export function createEnemies(map: LevelMap): Enemy[] {
     if (s.type === 'shooter') {
       return {
         x: s.x, y: s.y, type: 'shooter',
-        hp: 40, maxHp: 40, speed: 1.2, radius: 0.28,
-        attackCooldown: 0.5 + Math.random(), hurtFlash: 0, alive: true, bob: Math.random() * Math.PI * 2,
+        hp: 45, maxHp: 45, speed: 1.25, radius: 0.28,
+        attackCooldown: 0.4 + Math.random(), hurtFlash: 0, alive: true, bob: Math.random() * Math.PI * 2,
+      };
+    }
+    if (s.type === 'tank') {
+      return {
+        x: s.x, y: s.y, type: 'tank',
+        hp: 120, maxHp: 120, speed: 0.95, radius: 0.38,
+        attackCooldown: 0.8 + Math.random(), hurtFlash: 0, alive: true, bob: Math.random() * Math.PI * 2,
       };
     }
     return {
       x: s.x, y: s.y, type: 'grunt',
-      hp: 30, maxHp: 30, speed: 1.8, radius: 0.28,
+      hp: 35, maxHp: 35, speed: 2.1, radius: 0.28,
       attackCooldown: 0, hurtFlash: 0, alive: true, bob: Math.random() * Math.PI * 2,
     };
   });
+}
+
+export function createProjectiles(): Projectile[] {
+  return [];
 }
 
 function canSee(map: LevelMap, x0: number, y0: number, x1: number, y1: number): boolean {
@@ -55,6 +78,7 @@ export function updateEnemies(
   enemies: Enemy[],
   map: LevelMap,
   player: Player,
+  projectiles: Projectile[],
   dt: number,
 ): void {
   for (const e of enemies) {
@@ -66,81 +90,146 @@ export function updateEnemies(
     const dx = player.x - e.x;
     const dy = player.y - e.y;
     const dist = Math.hypot(dx, dy);
-    const sees = dist < 12 && canSee(map, e.x, e.y, player.x, player.y);
+    const sees = dist < 14 && canSee(map, e.x, e.y, player.x, player.y);
 
     if (!sees) continue;
 
     if (e.type === 'grunt') {
       if (dist > 0.55) {
-        const nx = e.x + (dx / dist) * e.speed * dt;
-        const ny = e.y + (dy / dist) * e.speed * dt;
-        tryEnemyMove(map, e, nx, ny);
+        tryEnemyMove(map, e, e.x + (dx / dist) * e.speed * dt, e.y + (dy / dist) * e.speed * dt);
       } else if (e.attackCooldown <= 0) {
-        damagePlayer(player, 12);
-        e.attackCooldown = 0.9;
+        damagePlayer(player, 14);
+        sfxHurt();
+        e.attackCooldown = 0.85;
+      }
+    } else if (e.type === 'shooter') {
+      if (dist < 3.2 && dist > 0.1) {
+        tryEnemyMove(map, e, e.x - (dx / dist) * e.speed * 0.65 * dt, e.y - (dy / dist) * e.speed * 0.65 * dt);
+      } else if (dist > 5.5) {
+        tryEnemyMove(map, e, e.x + (dx / dist) * e.speed * dt, e.y + (dy / dist) * e.speed * dt);
+      }
+      if (e.attackCooldown <= 0 && dist < 11) {
+        // Hitscan with slight inaccuracy
+        const miss = Math.random() < 0.18;
+        if (!miss) {
+          damagePlayer(player, 9);
+          sfxHurt();
+        }
+        e.attackCooldown = 1.25;
       }
     } else {
-      // Shooter: keep distance, fire projectiles (hitscan with delay)
-      if (dist < 3.5 && dist > 0.1) {
-        const nx = e.x - (dx / dist) * e.speed * 0.6 * dt;
-        const ny = e.y - (dy / dist) * e.speed * 0.6 * dt;
-        tryEnemyMove(map, e, nx, ny);
-      } else if (dist > 5) {
-        const nx = e.x + (dx / dist) * e.speed * dt;
-        const ny = e.y + (dy / dist) * e.speed * dt;
-        tryEnemyMove(map, e, nx, ny);
+      // Tank: lumber closer, fire visible plasma bolts
+      if (dist > 4) {
+        tryEnemyMove(map, e, e.x + (dx / dist) * e.speed * dt, e.y + (dy / dist) * e.speed * dt);
+      } else if (dist < 2.5) {
+        tryEnemyMove(map, e, e.x - (dx / dist) * e.speed * 0.4 * dt, e.y - (dy / dist) * e.speed * 0.4 * dt);
       }
-      if (e.attackCooldown <= 0 && dist < 10) {
-        damagePlayer(player, 8);
-        e.attackCooldown = 1.4;
+      if (e.attackCooldown <= 0 && dist < 12) {
+        const spd = 4.2;
+        projectiles.push({
+          x: e.x,
+          y: e.y,
+          vx: (dx / dist) * spd,
+          vy: (dy / dist) * spd,
+          damage: 18,
+          radius: 0.18,
+          life: 3.5,
+          fromEnemy: true,
+        });
+        e.attackCooldown = 1.6;
       }
     }
   }
 }
 
-/** Hitscan from player; returns true if something died */
-export function playerShoot(
-  enemies: Enemy[],
+export function updateProjectiles(
+  projectiles: Projectile[],
   map: LevelMap,
   player: Player,
+  dt: number,
+): void {
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.life -= dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.life <= 0 || isSolid(map, p.x, p.y)) {
+      projectiles.splice(i, 1);
+      continue;
+    }
+    if (p.fromEnemy) {
+      if (Math.hypot(p.x - player.x, p.y - player.y) < player.radius + p.radius) {
+        damagePlayer(player, p.damage);
+        sfxHurt();
+        projectiles.splice(i, 1);
+      }
+    }
+  }
+}
+
+function hitscanOne(
+  enemies: Enemy[],
+  map: LevelMap,
+  ox: number,
+  oy: number,
+  aimAngle: number,
+  range: number,
+  damage: number,
+  player: Player,
 ): boolean {
-  const range = 14;
-  const aimX = Math.cos(player.angle);
-  const aimY = Math.sin(player.angle);
+  const aimX = Math.cos(aimAngle);
+  const aimY = Math.sin(aimAngle);
   let closest: Enemy | null = null;
   let closestDist = range;
 
   for (const e of enemies) {
     if (!e.alive) continue;
-    const dx = e.x - player.x;
-    const dy = e.y - player.y;
+    const dx = e.x - ox;
+    const dy = e.y - oy;
     const dist = Math.hypot(dx, dy);
     if (dist > range || dist < 0.01) continue;
-    // Project onto aim direction
     const proj = dx * aimX + dy * aimY;
     if (proj < 0) continue;
     const perp = Math.abs(dx * aimY - dy * aimX);
-    const hitRadius = e.radius + 0.15 + dist * 0.02;
+    const hitRadius = e.radius + 0.12 + dist * 0.015;
     if (perp > hitRadius) continue;
-    if (!canSee(map, player.x, player.y, e.x, e.y)) continue;
+    if (!canSee(map, ox, oy, e.x, e.y)) continue;
     if (dist < closestDist) {
       closestDist = dist;
       closest = e;
     }
   }
 
-  if (closest) {
-    const dmg = closest.type === 'shooter' ? 22 : 18;
-    closest.hp -= dmg;
-    closest.hurtFlash = 0.15;
-    if (closest.hp <= 0) {
-      closest.alive = false;
-      player.kills++;
-      player.score += closest.type === 'shooter' ? 150 : 100;
-      return true;
-    }
+  if (!closest) return false;
+
+  // Falloff: shotgun pellets weaker at range
+  const falloff = Math.max(0.45, 1 - closestDist / (range + 2));
+  closest.hp -= damage * falloff;
+  closest.hurtFlash = 0.15;
+  sfxEnemyHit();
+  if (closest.hp <= 0) {
+    closest.alive = false;
+    player.kills++;
+    const pts = closest.type === 'tank' ? 300 : closest.type === 'shooter' ? 150 : 100;
+    player.score += pts;
+    sfxEnemyDie();
+    return true;
   }
   return false;
+}
+
+/** Fire current weapon hitscan (multi-pellet for shotgun). */
+export function playerShoot(
+  enemies: Enemy[],
+  map: LevelMap,
+  player: Player,
+  weaponId: WeaponId,
+): void {
+  const weap = WEAPONS[weaponId];
+  for (let i = 0; i < weap.pellets; i++) {
+    const spread = (Math.random() * 2 - 1) * weap.spread;
+    hitscanOne(enemies, map, player.x, player.y, player.angle + spread, weap.range, weap.damage, player);
+  }
 }
 
 export function aliveCount(enemies: Enemy[]): number {
