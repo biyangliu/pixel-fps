@@ -1,5 +1,8 @@
 import type { LevelMap, PickupKind, KeyColor } from './map';
-import { isSolid, isExit, tryUse, getFloorH, updateDoorsLifts, updateClosets } from './map';
+import {
+  isSolid, isExit, tryUse, getFloorH, getCeilH, updateDoorsLifts, updateClosets,
+  isNukage, tryTeleport, markExplored, revealAllMap,
+} from './map';
 import type { InputState } from './input';
 import {
   consumeMouseDelta, consumeWeaponSwitch, consumeScrollWeapon, consumeUse,
@@ -9,6 +12,8 @@ import {
 } from './weapons';
 import {
   sfxPickup, sfxKey, sfxDoor, sfxShoot, sfxPowerup, sfxSwitch, sfxSecret,
+  sfxEmptyClick, sfxLand, sfxSplash, sfxTeleport, sfxLift,
+  startChainsawIdle, stopChainsawIdle,
 } from './audio';
 
 export type Skill = 1 | 2 | 3 | 4;
@@ -40,17 +45,31 @@ export interface Player {
   invisTimer: number;
   invulnTimer: number;
   lightAmpTimer: number;
+  radSuitTimer: number;
+  hasBackpack: boolean;
+  hasAllMap: boolean;
   faceLook: number;
-  damageDir: number; // -1 left, 0 none, 1 right (approx)
+  damageDir: number;
   damageDirTimer: number;
   skill: Skill;
   secrets: number;
   itemsPicked: number;
+  itemsTotal: number;
   startTime: number;
   shake: number;
+  moveBob: number;
+  wasInNukage: boolean;
+  floorDamageTimer: number;
+  prevZ: number;
+  teleportCooldown: number;
+  moving: boolean;
 }
 
+const BASE_MAX_AMMO = { bullets: 200, shells: 50, rockets: 25, cells: 150 };
+const PACK_MAX_AMMO = { bullets: 400, shells: 100, rockets: 50, cells: 300 };
+
 export function createPlayer(spawn: { x: number; y: number; angle: number }, skill: Skill = 3): Player {
+  const ammoMul = skill === 1 ? 1.5 : skill === 4 ? 0.75 : 1;
   return {
     x: spawn.x,
     y: spawn.y,
@@ -61,8 +80,13 @@ export function createPlayer(spawn: { x: number; y: number; angle: number }, ski
     maxHp: 100,
     armor: 0,
     maxArmor: 200,
-    ammo: { bullets: 50, shells: 0, rockets: 0, cells: 0 },
-    maxAmmo: { bullets: 200, shells: 50, rockets: 25, cells: 150 },
+    ammo: {
+      bullets: Math.floor(50 * ammoMul),
+      shells: 0,
+      rockets: 0,
+      cells: 0,
+    },
+    maxAmmo: { ...BASE_MAX_AMMO },
     weapons: {
       fist: true,
       chainsaw: false,
@@ -87,14 +111,24 @@ export function createPlayer(spawn: { x: number; y: number; angle: number }, ski
     invisTimer: 0,
     invulnTimer: 0,
     lightAmpTimer: 0,
+    radSuitTimer: 0,
+    hasBackpack: false,
+    hasAllMap: false,
     faceLook: 0,
     damageDir: 0,
     damageDirTimer: 0,
     skill,
     secrets: 0,
     itemsPicked: 0,
+    itemsTotal: 0,
     startTime: performance.now(),
     shake: 0,
+    moveBob: 0,
+    wasInNukage: false,
+    floorDamageTimer: 0,
+    prevZ: 0.5,
+    teleportCooldown: 0,
+    moving: false,
   };
 }
 
@@ -102,6 +136,7 @@ export function resetPlayer(player: Player, spawn: { x: number; y: number; angle
   const s = skill ?? player.skill;
   const fresh = createPlayer(spawn, s);
   Object.assign(player, fresh);
+  stopChainsawIdle();
 }
 
 function tryMove(map: LevelMap, player: Player, nx: number, ny: number): void {
@@ -119,14 +154,17 @@ function tryMove(map: LevelMap, player: Player, nx: number, ny: number): void {
       !isSolid(map, player.x + r, ny + r, eye)) {
     player.y = ny;
   }
-  // Follow floor
   const fh = getFloorH(map, player.x, player.y);
   player.z = 0.5 + fh;
 }
 
 function switchWeapon(player: Player, id: WeaponId | null): void {
   if (!id) return;
-  if (player.weapons[id]) player.currentWeapon = id;
+  if (player.weapons[id]) {
+    player.currentWeapon = id;
+    if (id === 'chainsaw') startChainsawIdle();
+    else stopChainsawIdle();
+  }
 }
 
 function cycleWeapon(player: Player, dir: number): void {
@@ -135,7 +173,7 @@ function cycleWeapon(player: Player, dir: number): void {
     idx = (idx + dir + WEAPON_ORDER.length) % WEAPON_ORDER.length;
     const id = WEAPON_ORDER[idx];
     if (player.weapons[id]) {
-      player.currentWeapon = id;
+      switchWeapon(player, id);
       return;
     }
   }
@@ -163,6 +201,11 @@ function applyPickup(player: Player, kind: PickupKind, amount: number): boolean 
       player.armor = Math.min(player.maxArmor, player.armor + amount);
       sfxPickup();
       return true;
+    case 'armorbonus':
+      player.armor = Math.min(player.maxArmor, player.armor + 1);
+      player.score += 1;
+      sfxPickup();
+      return true;
     case 'megaarmor':
       player.armor = Math.min(player.maxArmor, Math.max(player.armor, amount));
       sfxPowerup();
@@ -170,7 +213,7 @@ function applyPickup(player: Player, kind: PickupKind, amount: number): boolean 
     case 'berserk':
       player.berserkTimer = 30;
       player.hp = Math.max(player.hp, 100);
-      player.currentWeapon = 'fist';
+      switchWeapon(player, 'fist');
       sfxPowerup();
       return true;
     case 'invis':
@@ -183,6 +226,24 @@ function applyPickup(player: Player, kind: PickupKind, amount: number): boolean 
       return true;
     case 'lightamp':
       player.lightAmpTimer = 40;
+      sfxPowerup();
+      return true;
+    case 'radsuit':
+      player.radSuitTimer = 60;
+      sfxPowerup();
+      return true;
+    case 'backpack':
+      if (player.hasBackpack) return false;
+      player.hasBackpack = true;
+      player.maxAmmo = { ...PACK_MAX_AMMO };
+      player.ammo.bullets = Math.min(player.maxAmmo.bullets, player.ammo.bullets + 20);
+      player.ammo.shells = Math.min(player.maxAmmo.shells, player.ammo.shells + 4);
+      player.ammo.rockets = Math.min(player.maxAmmo.rockets, player.ammo.rockets + 1);
+      player.ammo.cells = Math.min(player.maxAmmo.cells, player.ammo.cells + 20);
+      sfxPowerup();
+      return true;
+    case 'allmap':
+      player.hasAllMap = true;
       sfxPowerup();
       return true;
     case 'bullets':
@@ -222,37 +283,37 @@ function applyPickup(player: Player, kind: PickupKind, amount: number): boolean 
       return true;
     case 'weapon_chainsaw':
       player.weapons.chainsaw = true;
-      player.currentWeapon = 'chainsaw';
+      switchWeapon(player, 'chainsaw');
       sfxPickup();
       return true;
     case 'weapon_shotgun':
       player.weapons.shotgun = true;
       player.ammo.shells = Math.min(player.maxAmmo.shells, player.ammo.shells + 8);
-      player.currentWeapon = 'shotgun';
+      switchWeapon(player, 'shotgun');
       sfxPickup();
       return true;
     case 'weapon_chaingun':
       player.weapons.chaingun = true;
       player.ammo.bullets = Math.min(player.maxAmmo.bullets, player.ammo.bullets + 40);
-      player.currentWeapon = 'chaingun';
+      switchWeapon(player, 'chaingun');
       sfxPickup();
       return true;
     case 'weapon_rocket':
       player.weapons.rocket = true;
       player.ammo.rockets = Math.min(player.maxAmmo.rockets, player.ammo.rockets + 2);
-      player.currentWeapon = 'rocket';
+      switchWeapon(player, 'rocket');
       sfxPickup();
       return true;
     case 'weapon_plasma':
       player.weapons.plasma = true;
       player.ammo.cells = Math.min(player.maxAmmo.cells, player.ammo.cells + 40);
-      player.currentWeapon = 'plasma';
+      switchWeapon(player, 'plasma');
       sfxPickup();
       return true;
     case 'weapon_bfg':
       player.weapons.bfg = true;
       player.ammo.cells = Math.min(player.maxAmmo.cells, player.ammo.cells + 40);
-      player.currentWeapon = 'bfg';
+      switchWeapon(player, 'bfg');
       sfxPickup();
       return true;
     default:
@@ -284,25 +345,46 @@ export function updatePlayer(
   if (input.right) { mx += Math.cos(player.angle + Math.PI / 2); my += Math.sin(player.angle + Math.PI / 2); }
 
   const len = Math.hypot(mx, my);
-  if (len > 0) {
+  player.moving = len > 0;
+  if (player.moving) {
     mx = (mx / len) * speed * dt;
     my = (my / len) * speed * dt;
     tryMove(map, player, player.x + mx, player.y + my);
+    player.moveBob += dt * 10;
   }
+
+  // Landing thud
+  if (player.z - player.prevZ < -0.08) sfxLand();
+  player.prevZ = player.z;
 
   let message: string | null = null;
   if (consumeUse(input)) {
     const r = tryUse(map, player.x, player.y, player.angle, player.keys);
-    if (r.openedDoor) { sfxDoor(); message = 'DOOR OPENED'; }
+    if (r.openedDoor) { sfxDoor(false); message = 'DOOR OPENED'; }
     if (r.usedSwitch) { sfxSwitch(); message = 'SWITCH'; }
+    if (r.lift) { sfxLift(); message = 'LIFT'; }
     if (r.secret) { sfxSecret(); player.secrets = map.secretsFound; message = 'A SECRET IS REVEALED!'; }
     if (r.needKey) message = `NEED ${r.needKey.toUpperCase()} KEY`;
   }
 
-  updateDoorsLifts(map, dt);
+  const { doorClosed } = updateDoorsLifts(map, dt);
+  if (doorClosed) sfxDoor(true);
+
   const closetToast = updateClosets(map, player.x, player.y);
   if (closetToast && !message) message = closetToast;
 
+  // Teleporter
+  if (player.teleportCooldown > 0) player.teleportCooldown -= dt;
+  const tele = player.teleportCooldown <= 0 ? tryTeleport(map, player.x, player.y) : null;
+  if (tele) {
+    player.x = tele.destX;
+    player.y = tele.destY;
+    player.angle = tele.destAngle;
+    player.teleportCooldown = 1.2;
+    sfxTeleport();
+    message = 'TELEPORT!';
+    player.shake = Math.max(player.shake, 0.3);
+  }
 
   // Keep doors from closing on player
   for (const d of map.doors) {
@@ -310,6 +392,40 @@ export function updatePlayer(
       d.timer = Math.max(d.timer, 1.5);
     }
   }
+
+  // Nukage damage
+  const inNuke = isNukage(map, player.x, player.y);
+  if (inNuke && !player.wasInNukage) sfxSplash();
+  player.wasInNukage = inNuke;
+  if (inNuke) {
+    player.floorDamageTimer -= dt;
+    if (player.floorDamageTimer <= 0) {
+      player.floorDamageTimer = 0.35;
+      if (player.radSuitTimer <= 0 && player.invulnTimer <= 0) {
+        damagePlayer(player, 5);
+      }
+    }
+  } else {
+    player.floorDamageTimer = 0;
+  }
+
+  // Crusher damage
+  const ix = Math.floor(player.x);
+  const iy = Math.floor(player.y);
+  for (const c of map.crushers) {
+    if (c.x === ix && c.y === iy && c.pos > 0.7) {
+      damagePlayer(player, 20 * dt * 8);
+      player.shake = Math.max(player.shake, 0.4);
+    }
+  }
+  // Eye height under crusher
+  const ch = getCeilH(map, player.x, player.y);
+  if (ch < player.z + 0.15) {
+    damagePlayer(player, 25 * dt);
+  }
+
+  markExplored(map, player.x, player.y, player.hasAllMap ? 40 : 7);
+  if (player.hasAllMap) revealAllMap(map);
 
   if (player.shootCooldown > 0) player.shootCooldown -= dt;
   if (player.hurtFlash > 0) player.hurtFlash -= dt;
@@ -320,8 +436,8 @@ export function updatePlayer(
   if (player.invisTimer > 0) player.invisTimer -= dt;
   if (player.invulnTimer > 0) player.invulnTimer -= dt;
   if (player.lightAmpTimer > 0) player.lightAmpTimer -= dt;
+  if (player.radSuitTimer > 0) player.radSuitTimer -= dt;
   if (player.shake > 0) player.shake = Math.max(0, player.shake - dt * 4.5);
-
 
   const weap = WEAPONS[player.currentWeapon];
   let fired = false;
@@ -350,11 +466,19 @@ export function updatePlayer(
         weap.id === 'plasma' ? 0.08 : 0.1);
       fired = true;
       sfxShoot(weap.id);
-    } else if (player.weapons.fist) {
-      // auto switch to fist if empty? mild QoL: try pistol then fist
-      if (player.ammo.bullets > 0 && player.weapons.pistol) player.currentWeapon = 'pistol';
-      else player.currentWeapon = player.weapons.chainsaw ? 'chainsaw' : 'fist';
+    } else {
+      sfxEmptyClick();
+      player.shootCooldown = 0.2;
+      if (player.ammo.bullets > 0 && player.weapons.pistol) switchWeapon(player, 'pistol');
+      else switchWeapon(player, player.weapons.chainsaw ? 'chainsaw' : 'fist');
     }
+  }
+
+  // Chainsaw idle management
+  if (player.currentWeapon === 'chainsaw' && !fired) {
+    // idle already running
+  } else if (player.currentWeapon !== 'chainsaw') {
+    stopChainsawIdle();
   }
 
   for (const p of map.pickups) {
@@ -364,6 +488,7 @@ export function updatePlayer(
         p.taken = true;
         player.pickupFlash = 0.2;
         player.itemsPicked++;
+        if (p.kind === 'allmap') revealAllMap(map);
         if (p.secret) {
           if (map.secretsFound < map.secretsTotal) {
             map.secretsFound++;
@@ -382,7 +507,6 @@ export function updatePlayer(
 export function damagePlayer(player: Player, amount: number, fromX?: number, fromY?: number): void {
   if (player.invulnTimer > 0) return;
   let dmg = amount;
-  // Skill scaling
   if (player.skill === 1) dmg *= 0.55;
   else if (player.skill === 2) dmg *= 0.8;
   else if (player.skill === 4) dmg *= 1.35;

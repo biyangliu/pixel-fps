@@ -6,6 +6,7 @@ export interface InputState {
   shoot: boolean;
   pause: boolean;
   use: boolean;
+  automap: boolean;
   mouseDX: number;
   mouseDY: number;
   pointerLocked: boolean;
@@ -24,6 +25,7 @@ export function createInput(canvas: HTMLCanvasElement): InputState {
     shoot: false,
     pause: false,
     use: false,
+    automap: false,
     mouseDX: 0,
     mouseDY: 0,
     pointerLocked: false,
@@ -48,6 +50,11 @@ export function createInput(canvas: HTMLCanvasElement): InputState {
     }
     if (e.code === 'KeyE') {
       state.use = true;
+      e.preventDefault();
+      return;
+    }
+    if (e.code === 'Tab') {
+      state.automap = !state.automap;
       e.preventDefault();
       return;
     }
