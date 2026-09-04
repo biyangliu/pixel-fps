@@ -5,12 +5,14 @@ export interface InputState {
   right: boolean;
   shoot: boolean;
   pause: boolean;
+  use: boolean;
   mouseDX: number;
   mouseDY: number;
   pointerLocked: boolean;
   clickToStart: boolean;
   weaponSlot: number | null;
   scrollWeapon: number;
+  menuSelect: number | null;
 }
 
 export function createInput(canvas: HTMLCanvasElement): InputState {
@@ -21,12 +23,14 @@ export function createInput(canvas: HTMLCanvasElement): InputState {
     right: false,
     shoot: false,
     pause: false,
+    use: false,
     mouseDX: 0,
     mouseDY: 0,
     pointerLocked: false,
     clickToStart: false,
     weaponSlot: null,
     scrollWeapon: 0,
+    menuSelect: null,
   };
 
   const keyMap: Record<string, keyof InputState> = {
@@ -42,20 +46,18 @@ export function createInput(canvas: HTMLCanvasElement): InputState {
       state.pause = true;
       return;
     }
-    if (e.code === 'Digit1' || e.code === 'Numpad1') {
-      state.weaponSlot = 1;
+    if (e.code === 'KeyE') {
+      state.use = true;
       e.preventDefault();
       return;
     }
-    if (e.code === 'Digit2' || e.code === 'Numpad2') {
-      state.weaponSlot = 2;
-      e.preventDefault();
-      return;
-    }
-    if (e.code === 'Digit3' || e.code === 'Numpad3') {
-      state.weaponSlot = 3;
-      e.preventDefault();
-      return;
+    for (let i = 1; i <= 7; i++) {
+      if (e.code === `Digit${i}` || e.code === `Numpad${i}`) {
+        state.weaponSlot = i;
+        if (i <= 4) state.menuSelect = i;
+        e.preventDefault();
+        return;
+      }
     }
     const k = keyMap[e.code];
     if (k && typeof state[k] === 'boolean') {
@@ -143,4 +145,18 @@ export function consumeScrollWeapon(input: InputState): number {
   input.scrollWeapon = 0;
   if (s === 0) return 0;
   return s > 0 ? 1 : -1;
+}
+
+export function consumeUse(input: InputState): boolean {
+  if (input.use) {
+    input.use = false;
+    return true;
+  }
+  return false;
+}
+
+export function consumeMenuSelect(input: InputState): number | null {
+  const s = input.menuSelect;
+  input.menuSelect = null;
+  return s;
 }

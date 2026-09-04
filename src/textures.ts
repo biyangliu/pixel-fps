@@ -1,4 +1,4 @@
-/** Procedural 32x32 wall textures — darker DOOM-ish palette */
+/** Procedural wall + floor/ceiling flats — original art */
 
 const SIZE = 32;
 
@@ -89,16 +89,62 @@ export function makeBloodTexture(): Uint8ClampedArray {
   return buf;
 }
 
-export function makeDoorTexture(): Uint8ClampedArray {
+export function makeDoorTexture(tint: 'normal' | 'red' | 'yellow' | 'blue' = 'normal'): Uint8ClampedArray {
   const buf = makeBuffer();
+  const tintRGB =
+    tint === 'red' ? [180, 40, 40] :
+    tint === 'yellow' ? [200, 170, 40] :
+    tint === 'blue' ? [40, 80, 200] :
+    [180, 140, 40];
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
       const frame = x < 2 || x > 29 || y < 2 || y > 29;
       const bar = Math.abs(x - 16) < 2;
       const n = noise(x, y, 6) * 10;
       if (frame) setPx(buf, x, y, 90 + n, 70, 30);
-      else if (bar) setPx(buf, x, y, 180, 140, 40);
+      else if (bar) setPx(buf, x, y, tintRGB[0], tintRGB[1], tintRGB[2]);
       else setPx(buf, x, y, 40 + n, 55 + n, 70 + n);
+    }
+  }
+  return buf;
+}
+
+export function makeFloorFlat(): Uint8ClampedArray {
+  const buf = makeBuffer();
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const n = noise(x, y, 11) * 20;
+      const tile = (Math.floor(x / 8) + Math.floor(y / 8)) % 2;
+      if (tile) setPx(buf, x, y, 42 + n, 34 + n, 28 + n);
+      else setPx(buf, x, y, 32 + n, 26 + n, 22 + n);
+    }
+  }
+  return buf;
+}
+
+export function makeCeilFlat(): Uint8ClampedArray {
+  const buf = makeBuffer();
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const n = noise(x, y, 13) * 12;
+      const grate = x % 8 === 0 || y % 8 === 0;
+      if (grate) setPx(buf, x, y, 28 + n, 26 + n, 36 + n);
+      else setPx(buf, x, y, 14 + n, 12 + n, 18 + n);
+    }
+  }
+  return buf;
+}
+
+export function makeSwitchTexture(on: boolean): Uint8ClampedArray {
+  const buf = makeBuffer();
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const frame = x < 3 || x > 28 || y < 3 || y > 28;
+      const btn = Math.hypot(x - 16, y - 16) < 6;
+      const n = noise(x, y, 7) * 8;
+      if (frame) setPx(buf, x, y, 70 + n, 70 + n, 80 + n);
+      else if (btn) setPx(buf, x, y, on ? 40 : 200, on ? 200 : 40, 40);
+      else setPx(buf, x, y, 40 + n, 42 + n, 50 + n);
     }
   }
   return buf;
@@ -106,24 +152,32 @@ export function makeDoorTexture(): Uint8ClampedArray {
 
 export interface TextureBank {
   walls: Uint8ClampedArray[];
+  floor: Uint8ClampedArray;
+  ceil: Uint8ClampedArray;
   size: number;
 }
 
 export function createTextures(): TextureBank {
   return {
     walls: [
-      makeBrickTexture(),   // 1
-      makeStoneTexture(),   // 2
-      makeMetalTexture(),   // 3
-      makeTechTexture(),    // 4
-      makeDoorTexture(),    // used for doors via remap
-      makeBloodTexture(),   // 8 -> index handled in sample
+      makeBrickTexture(),
+      makeStoneTexture(),
+      makeMetalTexture(),
+      makeTechTexture(),
+      makeDoorTexture('normal'),
+      makeBloodTexture(),
+      makeDoorTexture('red'),
+      makeDoorTexture('yellow'),
+      makeDoorTexture('blue'),
+      makeSwitchTexture(false),
+      makeSwitchTexture(true),
     ],
+    floor: makeFloorFlat(),
+    ceil: makeCeilFlat(),
     size: SIZE,
   };
 }
 
-/** Sample wall texture; texId maps to procedural wall banks */
 export function sampleWall(
   bank: TextureBank,
   texId: number,
@@ -132,17 +186,40 @@ export function sampleWall(
   shade: number,
 ): [number, number, number] {
   let idx = 0;
+  // Tile enum mapping
   if (texId === 2) idx = 1;
   else if (texId === 3) idx = 2;
   else if (texId === 4) idx = 3;
-  else if (texId === 6) idx = 4; // locked door
-  else if (texId === 8) idx = 5; // blood
+  else if (texId === 6) idx = 4; // door
+  else if (texId === 10) idx = 5; // blood
+  else if (texId === 7) idx = 6; // red door
+  else if (texId === 8) idx = 7; // yellow
+  else if (texId === 9) idx = 8; // blue
+  else if (texId === 12) idx = 9; // switch
+  else if (texId === 13) idx = 0; // secret wall looks like brick
   else idx = 0;
 
   const tex = bank.walls[Math.max(0, Math.min(bank.walls.length - 1, idx))];
   const tx = Math.floor(u * bank.size) & (bank.size - 1);
   const ty = Math.floor(v * bank.size) & (bank.size - 1);
   const i = (ty * bank.size + tx) * 4;
+  return [
+    (tex[i] * shade) | 0,
+    (tex[i + 1] * shade) | 0,
+    (tex[i + 2] * shade) | 0,
+  ];
+}
+
+export function sampleFlat(
+  tex: Uint8ClampedArray,
+  size: number,
+  u: number,
+  v: number,
+  shade: number,
+): [number, number, number] {
+  const tx = Math.floor(u * size) & (size - 1);
+  const ty = Math.floor(v * size) & (size - 1);
+  const i = (ty * size + tx) * 4;
   return [
     (tex[i] * shade) | 0,
     (tex[i + 1] * shade) | 0,
