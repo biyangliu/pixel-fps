@@ -1,5 +1,5 @@
 import type { Player, Skill } from './player';
-import { aliveCount } from './enemies';
+import { aliveCount, totalEnemyCount } from './enemies';
 import type { Enemy } from './enemies';
 import { WEAPONS, WEAPON_ORDER, type WeaponId } from './weapons';
 import { STATUS_H } from './renderer';
@@ -22,12 +22,13 @@ export function drawHUD(
   phase: GamePhase,
   message: string | null,
   skillCursor: Skill,
+  automap = false,
 ): void {
   ctx.imageSmoothingEnabled = false;
   const viewH = h - STATUS_H;
 
   if (phase === 'playing' || phase === 'paused') {
-    if (phase === 'playing') {
+    if (phase === 'playing' && !automap) {
       const cx = (w / 2) | 0;
       const cy = (viewH / 2) | 0;
       ctx.fillStyle = '#ffffffaa';
@@ -37,19 +38,27 @@ export function drawHUD(
 
     drawStatusBar(ctx, w, h, player);
 
-    const left = aliveCount(enemies);
-    ctx.fillStyle = '#00000088';
-    ctx.fillRect(4, 4, w - 8, 12);
-    ctx.font = '8px monospace';
-    ctx.fillStyle = '#ccaa66';
-    const keys = [
-      player.keys.red ? 'R' : '-',
-      player.keys.yellow ? 'Y' : '-',
-      player.keys.blue ? 'B' : '-',
-    ].join('');
-    ctx.fillText(`SECTOR ZERO  keys[${keys}]  hostiles ${left}`, 8, 13);
+    if (!automap) {
+      const left = aliveCount(enemies);
+      ctx.fillStyle = '#00000088';
+      ctx.fillRect(4, 4, w - 8, 12);
+      ctx.font = '8px monospace';
+      ctx.fillStyle = '#ccaa66';
+      const keys = [
+        player.keys.red ? 'R' : '-',
+        player.keys.yellow ? 'Y' : '-',
+        player.keys.blue ? 'B' : '-',
+      ].join('');
+      ctx.fillText(`SECTOR ZERO  keys[${keys}]  hostiles ${left}`, 8, 13);
+    } else {
+      ctx.fillStyle = '#000000aa';
+      ctx.fillRect(4, 4, w - 8, 12);
+      ctx.font = '8px monospace';
+      ctx.fillStyle = '#88ffaa';
+      ctx.fillText(player.hasAllMap ? 'COMPUTER MAP — ALL REVEALED' : 'AUTOMAP — Tab to close', 8, 13);
+    }
 
-    if (message) {
+    if (message && !automap) {
       ctx.fillStyle = '#000000aa';
       ctx.fillRect(30, viewH / 2 - 10, w - 60, 16);
       ctx.fillStyle = '#ffee88';
@@ -57,13 +66,13 @@ export function drawHUD(
       ctx.fillText(message, (w - m.width) / 2, viewH / 2 + 2);
     }
 
-    // Powerup timers
     let py = 20;
     const buffs: string[] = [];
     if (player.berserkTimer > 0) buffs.push(`BERSERK ${player.berserkTimer | 0}`);
     if (player.invisTimer > 0) buffs.push(`BLUR ${player.invisTimer | 0}`);
     if (player.invulnTimer > 0) buffs.push(`GOD ${player.invulnTimer | 0}`);
     if (player.lightAmpTimer > 0) buffs.push(`LAMP ${player.lightAmpTimer | 0}`);
+    if (player.radSuitTimer > 0) buffs.push(`RAD ${player.radSuitTimer | 0}`);
     for (const b of buffs) {
       ctx.fillStyle = '#44ff88';
       ctx.fillText(b, 8, py);
@@ -73,17 +82,22 @@ export function drawHUD(
 
   if (phase === 'title') {
     drawPanel(ctx, w, h);
+    // Logo block
+    ctx.fillStyle = '#441100';
+    ctx.fillRect(60, 28, w - 120, 36);
     ctx.fillStyle = '#ff5522';
-    ctx.font = 'bold 16px monospace';
-    centerText(ctx, 'SECTOR ZERO', w, 40);
+    ctx.font = 'bold 18px monospace';
+    centerText(ctx, 'SECTOR ZERO', w, 52);
     ctx.fillStyle = '#cc8844';
     ctx.font = '8px monospace';
-    centerText(ctx, 'TECH-HELL PROTOCOL — ONE SECTOR', w, 56);
+    centerText(ctx, 'TECH-HELL PROTOCOL — ONE SECTOR', w, 72);
     ctx.fillStyle = '#ffffff';
-    centerText(ctx, 'Click to continue', w, 88);
+    centerText(ctx, 'Click to continue', w, 96);
     ctx.fillStyle = '#8899aa';
     centerText(ctx, 'Find the keys. Clear the closets. Reach the pad.', w, 118);
-    centerText(ctx, 'WASD  Mouse  Click/Space fire  E use  1-7 arms', w, 140);
+    centerText(ctx, 'WASD  Mouse  Fire  E use  Tab map  1-7 arms', w, 136);
+    ctx.fillStyle = '#665544';
+    centerText(ctx, 'Original art & audio — genre DNA, not a remake', w, 158);
   }
 
   if (phase === 'skill') {
@@ -92,13 +106,23 @@ export function drawHUD(
     ctx.font = 'bold 12px monospace';
     centerText(ctx, 'CHOOSE SKILL', w, 40);
     ctx.font = '8px monospace';
+    const descs = [
+      'Fewer hostiles, more ammo, soft hits',
+      'Standard density',
+      'Full roster, full pain',
+      'Fast demons, hard hits, lean ammo',
+    ];
     for (let s = 1; s <= 4; s++) {
       const selected = skillCursor === s;
       ctx.fillStyle = selected ? '#ffffff' : '#887766';
-      centerText(ctx, `${selected ? '>' : ' '} ${s}. ${SKILL_NAMES[s as Skill]}`, w, 60 + s * 16);
+      centerText(ctx, `${selected ? '>' : ' '} ${s}. ${SKILL_NAMES[s as Skill]}`, w, 58 + s * 18);
+      if (selected) {
+        ctx.fillStyle = '#aa8866';
+        centerText(ctx, descs[s - 1], w, 68 + s * 18);
+      }
     }
     ctx.fillStyle = '#aaccff';
-    centerText(ctx, '1-4 select / Click to start', w, 150);
+    centerText(ctx, '1-4 select / Click to start', w, 168);
   }
 
   if (phase === 'paused') {
@@ -115,16 +139,24 @@ export function drawHUD(
     drawPanel(ctx, w, h);
     ctx.fillStyle = '#44ff88';
     ctx.font = 'bold 14px monospace';
-    centerText(ctx, 'SECTOR ZERO CLEARED', w, 36);
+    centerText(ctx, 'SECTOR ZERO CLEARED', w, 30);
     ctx.fillStyle = '#ffffff';
     ctx.font = '8px monospace';
     const elapsed = Math.max(0, (performance.now() - player.startTime) / 1000);
-    centerText(ctx, `Kills ${player.kills}   Score ${player.score}`, w, 62);
-    centerText(ctx, `Secrets ${player.secrets}/2   Items ${player.itemsPicked}`, w, 76);
-    centerText(ctx, `Time ${elapsed | 0}s   Skill ${SKILL_NAMES[player.skill]}`, w, 90);
-    centerText(ctx, `HP ${player.hp}  ARMOR ${player.armor}`, w, 104);
+    const totalE = Math.max(1, totalEnemyCount(enemies));
+    const killsPct = Math.min(100, Math.round((player.kills / totalE) * 100));
+    const itemsTotal = Math.max(1, player.itemsTotal || 1);
+    const itemsPct = Math.min(100, Math.round((player.itemsPicked / itemsTotal) * 100));
+    const secretsPct = Math.min(100, Math.round((player.secrets / 2) * 100));
+    const mm = (elapsed / 60) | 0;
+    const ss = (elapsed % 60) | 0;
+    centerText(ctx, `KILLS   ${String(killsPct).padStart(3, ' ')}%  (${player.kills}/${totalE})`, w, 54);
+    centerText(ctx, `ITEMS   ${String(itemsPct).padStart(3, ' ')}%  (${player.itemsPicked}/${itemsTotal})`, w, 68);
+    centerText(ctx, `SECRET  ${String(secretsPct).padStart(3, ' ')}%  (${player.secrets}/2)`, w, 82);
+    centerText(ctx, `TIME    ${mm}:${String(ss).padStart(2, '0')}   ${SKILL_NAMES[player.skill]}`, w, 96);
+    centerText(ctx, `SCORE ${player.score}   HP ${player.hp}  ARM ${player.armor}`, w, 114);
     ctx.fillStyle = '#aaddcc';
-    centerText(ctx, 'Click to run it back', w, 140);
+    centerText(ctx, 'Click to run it back', w, 150);
   }
 
   if (phase === 'lose') {
@@ -178,7 +210,6 @@ function drawStatusBar(
   ctx.font = 'bold 13px monospace';
   ctx.fillText(ammo.padStart(3, ' '), 6, y0 + 26);
   ctx.font = '7px monospace';
-  ctx.font = '7px monospace';
 
   ctx.fillStyle = '#887755';
   ctx.fillText('HEALTH', 56, y0 + 12);
@@ -196,7 +227,6 @@ function drawStatusBar(
   ctx.fillText(String(player.armor | 0).padStart(3, ' '), 164, y0 + 26);
   ctx.font = '7px monospace';
 
-  // Arms 2-7 (skip fist/chainsaw shared slot display as 1)
   ctx.fillStyle = '#887755';
   ctx.fillText('ARMS', 208, y0 + 10);
   const slots: { slot: number; ids: WeaponId[] }[] = [
@@ -219,7 +249,6 @@ function drawStatusBar(
     ctx.fillText(String(s.slot), x + 3, y0 + 23);
   }
 
-  // Keys
   const keyCols: [boolean, string][] = [
     [player.keys.red, '#ff4444'],
     [player.keys.yellow, '#ffdd44'],
@@ -243,6 +272,7 @@ function drawFace(
   const hp = player.hp;
   let skin = '#d4a574';
   if (player.invulnTimer > 0) skin = '#ffe680';
+  else if (hp <= 0) skin = '#554444';
   else if (hp < 30) skin = '#aa6655';
   else if (hp < 60) skin = '#c48866';
   ctx.fillStyle = skin;
@@ -252,6 +282,7 @@ function drawFace(
   if (hp <= 0) {
     ctx.fillText('x', x + 5, y + 12);
     ctx.fillText('x', x + 17, y + 12);
+    ctx.fillRect(x + 10, y + 16, 8, 2);
   } else {
     const look = ((player.faceLook * 1.2) | 0) % 5;
     let ox = look === 1 ? -1 : look === 2 ? 1 : 0;
@@ -266,9 +297,11 @@ function drawFace(
   }
 
   ctx.fillStyle = '#441111';
-  if (hp < 25) ctx.fillRect(x + 10, y + 16, 8, 3);
-  else if (player.muzzleFlash > 0 || player.berserkTimer > 0) ctx.fillRect(x + 11, y + 15, 6, 5);
-  else ctx.fillRect(x + 10, y + 17, 8, 2);
+  if (hp > 0) {
+    if (hp < 25) ctx.fillRect(x + 10, y + 16, 8, 3);
+    else if (player.muzzleFlash > 0 || player.berserkTimer > 0) ctx.fillRect(x + 11, y + 15, 6, 5);
+    else ctx.fillRect(x + 10, y + 17, 8, 2);
+  }
 
   if (player.armor >= 100 && hp > 50) {
     ctx.fillStyle = '#2266aa';

@@ -3,11 +3,14 @@ import { createPlayer, resetPlayer, updatePlayer, type Player, type Skill } from
 import {
   createEnemies,
   createProjectiles,
+  createParticles,
   updateEnemies,
   updateProjectiles,
+  updateParticles,
   playerShoot,
   type Enemy,
   type Projectile,
+  type Particle,
 } from './enemies';
 import { createTextures, type TextureBank } from './textures';
 import {
@@ -15,7 +18,7 @@ import {
 } from './input';
 import { renderFrame } from './renderer';
 import { drawHUD, type GamePhase } from './ui';
-import { sfxWin, sfxLose, startAmbient, stopAmbient, sfxDoor } from './audio';
+import { sfxWin, sfxLose, startAmbient, stopAmbient, sfxDoor, playSting } from './audio';
 
 const INTERNAL_W = 320;
 const INTERNAL_H = 200;
@@ -26,6 +29,7 @@ export class Game {
   private player: Player;
   private enemies: Enemy[];
   private projectiles: Projectile[];
+  private particles: Particle[];
   private textures: TextureBank;
   private input: InputState;
   private phase: GamePhase = 'title';
@@ -37,6 +41,7 @@ export class Game {
   private toastTimer = 0;
   private skillCursor: Skill = 3;
   private lastGunshot = false;
+  private titleStingPlayed = false;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -46,8 +51,9 @@ export class Game {
 
     this.map = createLevel();
     this.player = createPlayer(this.map.spawn, this.skillCursor);
-    this.enemies = createEnemies(this.map);
+    this.enemies = createEnemies(this.map, this.skillCursor);
     this.projectiles = createProjectiles();
+    this.particles = createParticles();
     this.textures = createTextures();
     this.input = createInput(canvas);
     this.zBuffer = new Float32Array(INTERNAL_W);
@@ -64,8 +70,10 @@ export class Game {
     this.map = createLevel();
     resetPickups(this.map);
     resetPlayer(this.player, this.map.spawn, this.skillCursor);
-    this.enemies = createEnemies(this.map);
+    this.enemies = createEnemies(this.map, this.skillCursor);
     this.projectiles = createProjectiles();
+    this.particles = createParticles();
+    this.player.itemsTotal = this.map.pickups.length;
     this.toast = null;
     this.toastTimer = 0;
     this.lastGunshot = false;
@@ -109,6 +117,10 @@ export class Game {
     }
 
     if (this.phase === 'title') {
+      if (!this.titleStingPlayed && this.startArmed) {
+        playSting('title');
+        this.titleStingPlayed = true;
+      }
       consumePause(this.input);
       if (this.startArmed) {
         this.startArmed = false;
@@ -164,9 +176,8 @@ export class Game {
     if (!hadKeys.blue && this.player.keys.blue) this.showToast('BLUE KEYCARD');
     if (message) this.showToast(message, 1.8);
 
-    // Closet release: wake dormant trap monsters near the player
     if (message === 'TRAP!' || message === 'INCOMING!' || message === 'AMBUSH!') {
-      sfxDoor();
+      sfxDoor(false);
       for (const e of this.enemies) {
         if (!e.alive || !e.closet) continue;
         if (Math.hypot(e.x - this.player.x, e.y - this.player.y) < 10) {
@@ -177,13 +188,22 @@ export class Game {
     }
 
     if (fired) {
-      playerShoot(this.enemies, this.projectiles, this.map, this.player, this.player.currentWeapon);
+      playerShoot(
+        this.enemies, this.projectiles, this.map, this.player,
+        this.player.currentWeapon, this.particles,
+      );
       this.lastGunshot = true;
     }
 
-    updateEnemies(this.enemies, this.map, this.player, this.projectiles, dt, this.lastGunshot);
+    updateEnemies(
+      this.enemies, this.map, this.player, this.projectiles, dt,
+      this.lastGunshot, this.particles,
+    );
     this.lastGunshot = false;
-    updateProjectiles(this.projectiles, this.enemies, this.map, this.player, dt);
+    updateProjectiles(
+      this.projectiles, this.enemies, this.map, this.player, dt, this.particles,
+    );
+    updateParticles(this.particles, dt);
 
     if (this.player.hp <= 0) {
       this.phase = 'lose';
@@ -196,6 +216,7 @@ export class Game {
     if (reachedExit) {
       this.phase = 'win';
       sfxWin();
+      playSting('inter');
       stopAmbient();
       if (document.pointerLockElement) document.exitPointerLock();
     }
@@ -213,6 +234,8 @@ export class Game {
         this.projectiles,
         this.textures,
         this.zBuffer,
+        this.particles,
+        this.input.automap && this.phase === 'playing',
       );
     } else {
       this.ctx.fillStyle = '#0a0808';
@@ -220,6 +243,15 @@ export class Game {
       this.ctx.fillStyle = '#120e0c';
       for (let y = 0; y < INTERNAL_H; y += 2) {
         this.ctx.fillRect(0, y, INTERNAL_W, 1);
+      }
+      // Title visual identity — tech-hell bars
+      if (this.phase === 'title' || this.phase === 'skill') {
+        this.ctx.fillStyle = '#3a1810';
+        this.ctx.fillRect(0, 0, INTERNAL_W, 8);
+        this.ctx.fillRect(0, INTERNAL_H - 8, INTERNAL_W, 8);
+        this.ctx.fillStyle = '#882211';
+        this.ctx.fillRect(0, 8, INTERNAL_W, 2);
+        this.ctx.fillRect(0, INTERNAL_H - 10, INTERNAL_W, 2);
       }
     }
     drawHUD(
@@ -231,6 +263,7 @@ export class Game {
       this.phase,
       this.phase === 'playing' ? this.toast : null,
       this.skillCursor,
+      this.input.automap && this.phase === 'playing',
     );
   }
 }
