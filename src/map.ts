@@ -76,65 +76,55 @@ export interface LevelMap {
 }
 
 /**
- * SECTOR ZERO — one killer episode.
- *
- * Beat sheet:
- *  1. Dark barracks start — pistol, two troopers, stim (learn move/shoot)
- *  2. Shotgun reveal in side armory + first closet ambush
- *  3. Hub crossroads — red key behind pressure, RED door gates east
- *  4. Imp galleries — fireball sightlines, shells economy
- *  5. Yellow wing — plasma tease, souls floaters, YELLOW key
- *  6. Lower arsenal — chaingun, rockets, demon rush closets
- *  7. Chainsaw berserk pit (optional power fantasy)
- *  8. Lift + switch — commit upward into blue key antechamber
- *  9. BLUE door → baron climax with caco support → EXIT
- *  Secrets: megaarmor niche, invuln before climax
- *
- * Legend: # wall  . floor  S spawn  E exit  d door
- *         r/y/b keyed doors  L lift  W switch  * secret wall
+ * SECTOR ZERO — verified critical path (48×29):
+ *  Start → stim/shotgun → red key room → RED door → chaingun + yellow key
+ *  → YELLOW door → lift/switch corridor + blue key → BLUE door → baron/exit
+ *  Optional: chainsaw/berserk, rockets/demon pit, secrets (blur + invuln)
  */
 const RAW = `
-################################################################
-#S....#..........##..............##............##.............##
-#.....#...d......##......####....##...####.....##.............##
-#..h..#..........dd......#..#....##...#..#.....##......y......##
-#.....#...########.......#..#....d....#..#.....########d########
-#.....#...#......#.......#..######....####.............#....E.##
-#....######......#.......#........#........#####.......#......##
-#.........#......#########..#######..#######...#.......####d####
-#..s..#####..........................#.....#...#..............##
-#.....#...#..########..##########....#..c..d...#..............##
-#.....#...#..#......#..#........#....#.....#...#......####....##
-#..####...d..#..R...#..#..i..i..#....#######...#......#..#....##
-#............#......#..#........#..............#......#..#....##
-#............########..##########..............#......#..d....##
-#..............................................#......####....##
-#..####..#######################################..............##
-#..#..#..#............#.........#..............##.............##
-#..#..#..#..######....#..p......#..............##....L........##
-#..#.....#..#....#....#.........#..#############..............##
-#..#######..#....#....######d####..#...........#..............##
-#...........#..C.#.........#....#..#...........#..............##
-#...........######.........#....d..#...........#..............##
-#..........................#....#..#.....W.....#..............##
-#..########..###############....#..#############..............##
-#..#......#..#..................#.............................##
-#..#..k...d..#........D.D.......#.............................##
-#..#......#..#..................#.............................##
-#..########..####################.............................##
-#.............................................................##
-#............................*................................##
-################################################################
+################################################
+#S....###..##....#............##################
+#.....#..d.h.....#............#................#
+#..TT.d..........#....####....d................#
+#.....#....s.....#....#..#....#................#
+#..####..........######..######................#
+#.....#........................................#
+#.....d..########..............................#
+#..####..#..R...#......ii..............#########
+#........#......#................c.....r..Y....#
+#........###d####..#####d######........#.......#
+#...............#..#.........#.........#.......#
+#...............#..#.........#.........#.......#
+#...............#..#.........#.........####y####
+##########......####.........##........#.......#
+#........#.........#..C.......#........#..L....#
+#........d.........#..........#........#.......#
+#........#...######..####d#####........#..W....#
+#####.####...#....#..#......#..........#.......#
+#...#........#....#..#..D...#..........#..B....#
+#.K.d......P.#....#..#......#..........#.......#
+#...#........#....#..###d####.......######b#####
+#####.######.#....#.................#.......E..#
+#..........#.#....#.................#..........#
+#..........#.#....#.............################
+#.....###..###....##############.............###
+#.....#.#.......................*###############
+#.....#*d......................................#
+################################################
 `.trim().split('\n');
 
 function charToTile(c: string): number {
   switch (c) {
-    case '#': case '*': return Tile.WallBrick;
+    case '#': return Tile.WallBrick;
+    case '*': return Tile.SecretWall;
     case 'E': return Tile.Exit;
     case 'd': return Tile.Door;
+    case 'r': return Tile.DoorRed;
+    case 'y': return Tile.DoorYellow;
+    case 'b': return Tile.DoorBlue;
     case 'L': return Tile.Lift;
     case 'W': return Tile.Switch;
-    default: return Tile.Empty; // letters (R,y,h,…) are floor markers only
+    default: return Tile.Empty;
   }
 }
 
@@ -173,12 +163,11 @@ function buildLight(width: number, height: number, tiles: number[]): Float32Arra
               nt !== Tile.DoorYellow && nt !== Tile.DoorBlue) wallNear++;
         }
       }
-      let L = 0.32 + (1 - wallNear / 25) * 0.42;
-      if (t === Tile.Exit) L = 1.0;
-      if (wallNear > 14) L *= 0.68;
-      // Darker start barracks mood
-      if (x < 8 && y < 8) L *= 0.85;
-      light[i] = Math.max(0.18, Math.min(1, L));
+      let L = 0.34 + (1 - wallNear / 25) * 0.44;
+      if (t === Tile.Exit) L = 1.05;
+      if (wallNear > 14) L *= 0.7;
+      if (x < 8 && y < 8) L *= 0.82;
+      light[i] = Math.max(0.18, Math.min(1.1, L));
     }
   }
   return light;
@@ -196,7 +185,6 @@ export function createLevel(): LevelMap {
     for (let x = 0; x < width; x++) {
       const ch = row[x] ?? '#';
       let t = charToTile(ch);
-      if (ch === '*') t = Tile.SecretWall;
       if (t === Tile.WallBrick) {
         const variety = (x * 3 + y * 7) % 5;
         if (variety === 1) t = Tile.WallStone;
@@ -208,24 +196,12 @@ export function createLevel(): LevelMap {
       const i = y * width + x;
       floorH[i] = 0;
       ceilH[i] = 1;
-      // Raised exit platform
-      if (x >= 54 && y >= 1 && y <= 6 && isWalkableTile(t)) floorH[i] = 0.16;
-      // Subtle step to lift
-      if (x >= 48 && x <= 52 && y === 17 && isWalkableTile(t)) floorH[i] = 0.08;
-      if (x >= 48 && x <= 52 && y === 16 && isWalkableTile(t)) floorH[i] = 0.04;
-    }
-  }
-
-  // Explicit keyed doors by glyph / coordinate
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (tiles[y * width + x] !== Tile.Door) continue;
-      // Red gate: double door leaving start into galleries (x~18)
-      if (y === 3 && (x === 17 || x === 18)) tiles[y * width + x] = Tile.DoorRed;
-      // Yellow: east approach before exit antechamber
-      if (y === 4 && x === 55) tiles[y * width + x] = Tile.DoorYellow;
-      // Blue: final door into exit chamber
-      if (y === 7 && x === 59) tiles[y * width + x] = Tile.DoorBlue;
+      // Exit pad glow step
+      if (t === Tile.Exit) floorH[i] = 0.12;
+      // Lift antechamber subtle steps
+      if (x >= 39 && x <= 45 && y >= 14 && y <= 20 && isWalkableTile(t)) {
+        floorH[i] = 0.04;
+      }
     }
   }
 
@@ -243,11 +219,24 @@ export function createLevel(): LevelMap {
     }
   }
 
+  // Start closet door is authored in RAW at (8,1)
+  const closetDoor1 = { x: 9, y: 2 };
+  // Rocket pit closet door
+  const closetDoor2 = { x: 18, y: 18 };
+  if (tiles[closetDoor2.y * width + closetDoor2.x] === Tile.WallBrick ||
+      tiles[closetDoor2.y * width + closetDoor2.x] === Tile.WallStone ||
+      tiles[closetDoor2.y * width + closetDoor2.x] === Tile.WallMetal ||
+      tiles[closetDoor2.y * width + closetDoor2.x] === Tile.WallTech ||
+      tiles[closetDoor2.y * width + closetDoor2.x] === Tile.WallBlood) {
+    tiles[closetDoor2.y * width + closetDoor2.x] = Tile.Door;
+    doors.push({ x: closetDoor2.x, y: closetDoor2.y, open: 0, opening: false, keyed: null, timer: 0 });
+  }
+
   const lifts: LiftState[] = [];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       if (tiles[y * width + x] === Tile.Lift) {
-        lifts.push({ x, y, pos: 0, moving: 0, low: 0, high: 0.38 });
+        lifts.push({ x, y, pos: 0, moving: 0, low: 0, high: 0.42 });
       }
     }
   }
@@ -258,131 +247,120 @@ export function createLevel(): LevelMap {
       x: Math.floor(p.x), y: Math.floor(p.y), on: false, action: 'lift', targetId: 0,
     });
   }
-  // Second switch opens all remaining secret walls
-  switches.push({ x: 30, y: 29, on: false, action: 'secret', targetId: 0 });
-  if (tiles[29 * width + 30] === Tile.Empty) tiles[29 * width + 30] = Tile.Switch;
 
   const spawn = findChars('S')[0] ?? { x: 1.5, y: 1.5 };
+  const redKey = findChars('R')[0]!;
+  const yelKey = findChars('Y')[0]!;
+  const bluKey = findChars('B')[0]!;
+  const shotgun = findChars('s')[0]!;
+  const stim = findChars('h')[0]!;
+  const chaingun = findChars('c')[0]!;
+  const chainsaw = findChars('C')[0]!;
+  const rocket = findChars('P')[0]!;
+  const berserk = findChars('K')[0]!;
+  const exitPad = findChars('E')[0]!;
 
-  // Authored pickups — tight ammo economy
   const pickups: Pickup[] = [
-    { x: 3.5, y: 3.5, kind: 'stim', amount: 10, taken: false },
-    { x: 3.5, y: 8.5, kind: 'weapon_shotgun', amount: 1, taken: false },
-    { x: 2.5, y: 8.5, kind: 'shells', amount: 8, taken: false },
-    { x: 14.5, y: 11.5, kind: 'key_red', amount: 1, taken: false },
-    { x: 12.5, y: 12.5, kind: 'armor', amount: 25, taken: false },
-    { x: 12.5, y: 12.5, kind: 'bullets', amount: 20, taken: false },
-    { x: 26.5, y: 11.5, kind: 'shells', amount: 8, taken: false },
-    { x: 28.5, y: 12.5, kind: 'health', amount: 25, taken: false },
-    { x: 40.5, y: 9.5, kind: 'weapon_chaingun', amount: 1, taken: false },
-    { x: 41.5, y: 8.5, kind: 'bullets', amount: 40, taken: false },
-    { x: 56.5, y: 3.5, kind: 'key_yellow', amount: 1, taken: false },
-    { x: 50.5, y: 2.5, kind: 'cells', amount: 40, taken: false },
-    { x: 48.5, y: 5.5, kind: 'weapon_plasma', amount: 1, taken: false },
-    { x: 36.5, y: 17.5, kind: 'weapon_rocket', amount: 1, taken: false },
-    { x: 35.5, y: 16.5, kind: 'rockets', amount: 4, taken: false },
-    { x: 22.5, y: 20.5, kind: 'weapon_chainsaw', amount: 1, taken: false },
-    { x: 20.5, y: 20.5, kind: 'berserk', amount: 1, taken: false },
-    { x: 6.5, y: 25.5, kind: 'health', amount: 25, taken: false },
-    { x: 8.5, y: 24.5, kind: 'shells', amount: 8, taken: false },
-    { x: 52.5, y: 17.5, kind: 'key_blue', amount: 1, taken: false },
-    { x: 50.5, y: 18.5, kind: 'megaarmor', amount: 200, taken: false },
-    { x: 58.5, y: 5.5, kind: 'soulsphere', amount: 100, taken: false },
-    { x: 57.5, y: 2.5, kind: 'weapon_bfg', amount: 1, taken: false },
-    { x: 56.5, y: 1.5, kind: 'cells', amount: 40, taken: false },
-    // Secrets
-    { x: 30.5, y: 28.5, kind: 'invis', amount: 1, taken: false, secret: true },
-    { x: 44.5, y: 21.5, kind: 'invuln', amount: 1, taken: false, secret: true },
+    { x: stim.x, y: stim.y, kind: 'stim', amount: 10, taken: false },
+    { x: shotgun.x, y: shotgun.y, kind: 'weapon_shotgun', amount: 1, taken: false },
+    { x: shotgun.x - 1, y: shotgun.y, kind: 'shells', amount: 8, taken: false },
     { x: 4.5, y: 1.5, kind: 'bonus', amount: 1, taken: false },
-    { x: 38.5, y: 20.5, kind: 'lightamp', amount: 1, taken: false },
-    { x: 28.5, y: 20.5, kind: 'rockets', amount: 2, taken: false },
-    { x: 15.5, y: 3.5, kind: 'bullets', amount: 10, taken: false },
+    { x: 14.5, y: 3.5, kind: 'bullets', amount: 20, taken: false },
+    { x: redKey.x, y: redKey.y, kind: 'key_red', amount: 1, taken: false },
+    { x: redKey.x - 1, y: redKey.y + 1, kind: 'armor', amount: 25, taken: false },
+    { x: redKey.x + 1, y: redKey.y, kind: 'shells', amount: 8, taken: false },
+    { x: chaingun.x, y: chaingun.y, kind: 'weapon_chaingun', amount: 1, taken: false },
+    { x: chaingun.x - 1, y: chaingun.y, kind: 'bullets', amount: 50, taken: false },
+    { x: yelKey.x, y: yelKey.y, kind: 'key_yellow', amount: 1, taken: false },
+    { x: yelKey.x, y: yelKey.y + 2, kind: 'weapon_plasma', amount: 1, taken: false },
+    { x: yelKey.x, y: yelKey.y + 3, kind: 'cells', amount: 40, taken: false },
+    { x: chainsaw.x, y: chainsaw.y, kind: 'weapon_chainsaw', amount: 1, taken: false },
+    { x: berserk.x, y: berserk.y, kind: 'berserk', amount: 1, taken: false },
+    { x: rocket.x, y: rocket.y, kind: 'weapon_rocket', amount: 1, taken: false },
+    { x: rocket.x + 1, y: rocket.y, kind: 'rockets', amount: 5, taken: false },
+    { x: 22.5, y: 11.5, kind: 'health', amount: 25, taken: false },
+    { x: 26.5, y: 8.5, kind: 'shells', amount: 8, taken: false },
+    { x: bluKey.x, y: bluKey.y, kind: 'key_blue', amount: 1, taken: false },
+    { x: bluKey.x, y: bluKey.y - 1, kind: 'megaarmor', amount: 200, taken: false },
+    { x: 40.5, y: 16.5, kind: 'cells', amount: 20, taken: false },
+    { x: exitPad.x - 1, y: exitPad.y, kind: 'weapon_bfg', amount: 1, taken: false },
+    { x: exitPad.x - 1, y: exitPad.y + 1, kind: 'soulsphere', amount: 100, taken: false },
+    { x: exitPad.x, y: exitPad.y + 1, kind: 'cells', amount: 40, taken: false },
+    // Secrets
+    { x: 7.5, y: 26.5, kind: 'invis', amount: 1, taken: false, secret: true },
+    { x: 34.5, y: 25.5, kind: 'invuln', amount: 1, taken: false, secret: true },
+    { x: 22.5, y: 22.5, kind: 'lightamp', amount: 1, taken: false },
+    { x: 20.5, y: 15.5, kind: 'rockets', amount: 2, taken: false },
+    { x: 15.5, y: 6.5, kind: 'bullets', amount: 15, taken: false },
+    { x: 33.5, y: 6.5, kind: 'health', amount: 25, taken: false },
   ];
 
-  // Staged encounters — closets flagged so they stay quiet until trigger
+
   const enemySpawns: LevelMap['enemySpawns'] = [
-    // 1. Barracks greeting
-    { x: 5.5, y: 2.5, type: 'trooper' },
-    { x: 7.5, y: 5.5, type: 'trooper' },
-    // 2. Shotgun alcove pressure
-    { x: 5.5, y: 9.5, type: 'shotgunner' },
-    // Closet behind start door column
-    { x: 10.5, y: 2.5, type: 'imp', closet: true },
-    { x: 11.5, y: 1.5, type: 'trooper', closet: true },
-    // 3. Red key room guards
-    { x: 15.5, y: 11.5, type: 'shotgunner' },
-    { x: 14.5, y: 12.5, type: 'imp' },
-    // 4. Imp gallery
-    { x: 27.5, y: 11.5, type: 'imp' },
-    { x: 29.5, y: 12.5, type: 'imp' },
-    { x: 25.5, y: 10.5, type: 'trooper' },
-    // Closet mid-hub
-    { x: 22.5, y: 8.5, type: 'demon', closet: true },
-    { x: 23.5, y: 8.5, type: 'soul', closet: true },
-    // 5. Chaingun wing
-    { x: 41.5, y: 10.5, type: 'shotgunner' },
-    { x: 39.5, y: 8.5, type: 'imp' },
-    { x: 43.5, y: 12.5, type: 'caco' },
-    // 6. Yellow antechamber floaters
-    { x: 52.5, y: 3.5, type: 'soul' },
-    { x: 54.5, y: 2.5, type: 'soul' },
-    { x: 50.5, y: 5.5, type: 'imp' },
-    // 7. Lower arsenal demons
-    { x: 24.5, y: 25.5, type: 'demon' },
-    { x: 26.5, y: 25.5, type: 'demon' },
-    { x: 22.5, y: 24.5, type: 'shotgunner' },
-    // Closet when taking rockets
-    { x: 34.5, y: 20.5, type: 'imp', closet: true },
-    { x: 33.5, y: 20.5, type: 'shotgunner', closet: true },
-    { x: 33.5, y: 21.5, type: 'soul', closet: true },
-    // 8. Blue key approach
-    { x: 50.5, y: 16.5, type: 'caco' },
-    { x: 53.5, y: 18.5, type: 'shotgunner' },
-    // 9. Climax
-    { x: 60.5, y: 5.5, type: 'baron' },
-    { x: 58.5, y: 3.5, type: 'caco' },
-    { x: 61.5, y: 2.5, type: 'imp' },
-    { x: 57.5, y: 6.5, type: 'demon' },
+    // Barracks
+    { x: 3.5, y: 3.5, type: 'trooper' },
+    { x: 4.5, y: 3.5, type: 'trooper' },
+    // Shotgun pressure
+    { x: 12.5, y: 4.5, type: 'shotgunner' },
+    // Closet trap near start door
+    { x: 9.5, y: 1.5, type: 'imp', closet: true },
+    { x: 10.5, y: 1.5, type: 'trooper', closet: true },
+    // Red key guards
+    { x: 13.5, y: 8.5, type: 'shotgunner' },
+    { x: 11.5, y: 9.5, type: 'imp' },
+    // Imp gallery
+    { x: 22.5, y: 8.5, type: 'imp' },
+    { x: 23.5, y: 8.5, type: 'imp' },
+    { x: 20.5, y: 11.5, type: 'trooper' },
+    // Chaingun / red door approach
+    { x: 31.5, y: 9.5, type: 'shotgunner' },
+    { x: 28.5, y: 6.5, type: 'imp' },
+    // Yellow wing floaters
+    { x: 41.5, y: 11.5, type: 'soul' },
+    { x: 42.5, y: 12.5, type: 'soul' },
+    { x: 40.5, y: 10.5, type: 'caco' },
+    // Lower arsenal
+    { x: 12.5, y: 19.5, type: 'demon' },
+    { x: 14.5, y: 20.5, type: 'demon' },
+    { x: 16.5, y: 18.5, type: 'shotgunner' },
+    // Rocket closet
+    { x: 19.5, y: 19.5, type: 'imp', closet: true },
+    { x: 20.5, y: 20.5, type: 'shotgunner', closet: true },
+    { x: 19.5, y: 20.5, type: 'soul', closet: true },
+    // Demon pit markers
+    { x: 25.5, y: 19.5, type: 'demon' },
+    { x: 26.5, y: 20.5, type: 'imp' },
+    // Blue corridor
+    { x: 41.5, y: 16.5, type: 'caco' },
+    { x: 40.5, y: 18.5, type: 'shotgunner' },
+    // Climax
+    { x: 43.5, y: 22.5, type: 'baron' },
+    { x: 41.5, y: 23.5, type: 'caco' },
+    { x: 44.5, y: 23.5, type: 'imp' },
+    { x: 42.5, y: 22.5, type: 'demon' },
   ];
 
-  // Monster closet triggers — open specific doors when player crosses
   const closets: ClosetTrigger[] = [
     {
-      x0: 8, y0: 1, x1: 12, y1: 6,
-      doorCells: [{ x: 6, y: 2 }],
+      x0: 6, y0: 1, x1: 12, y1: 5,
+      doorCells: [{ x: 9, y: 2 }],
       fired: false,
       toast: 'TRAP!',
     },
     {
-      x0: 20, y0: 8, x1: 28, y1: 14,
-      doorCells: findDoorNear(doors, 22, 8),
-      fired: false,
-      toast: 'INCOMING!',
-    },
-    {
-      x0: 32, y0: 16, x1: 38, y1: 22,
-      doorCells: [{ x: 36, y: 19 }],
+      x0: 10, y0: 17, x1: 16, y1: 21,
+      doorCells: [closetDoor2],
       fired: false,
       toast: 'AMBUSH!',
     },
+    {
+      // Mid gallery pressure — opens central door already present
+      x0: 18, y0: 7, x1: 28, y1: 12,
+      doorCells: [{ x: 24, y: 10 }],
+      fired: false,
+      toast: 'INCOMING!',
+    },
   ];
-
-  // Ensure closet door cells exist as doors
-  for (const c of closets) {
-    for (const cell of c.doorCells) {
-      const i = cell.y * width + cell.x;
-      if (i >= 0 && i < tiles.length && tiles[i] !== Tile.Door && tiles[i] !== Tile.DoorRed &&
-          tiles[i] !== Tile.DoorYellow && tiles[i] !== Tile.DoorBlue) {
-        // If wall, convert to door for closet release
-        if (tiles[i] !== Tile.Empty && tiles[i] !== Tile.Exit) {
-          tiles[i] = Tile.Door;
-          if (!doors.some((d) => d.x === cell.x && d.y === cell.y)) {
-            doors.push({ x: cell.x, y: cell.y, open: 0, opening: false, keyed: null, timer: 0 });
-          }
-        }
-      }
-    }
-  }
 
   return {
     width, height, tiles, floorH, ceilH,
@@ -397,11 +375,6 @@ export function createLevel(): LevelMap {
     secretsTotal: 2,
     gunLight: 0,
   };
-}
-
-function findDoorNear(doors: DoorState[], x: number, y: number): { x: number; y: number }[] {
-  const found = doors.filter((d) => Math.hypot(d.x - x, d.y - y) < 4);
-  return found.length ? found.map((d) => ({ x: d.x, y: d.y })) : [{ x, y }];
 }
 
 export function getTile(map: LevelMap, x: number, y: number): number {
@@ -489,7 +462,7 @@ export function tryUse(
   for (const sw of map.switches) {
     if (Math.hypot(sw.x + 0.5 - px, sw.y + 0.5 - py) > 1.45) continue;
     if (sw.on && sw.action !== 'lift') continue;
-    sw.on = !sw.on || sw.action === 'secret';
+    sw.on = sw.action === 'lift' ? !sw.on : true;
     usedSwitch = true;
     if (sw.action === 'lift') {
       for (const lift of map.lifts) lift.moving = lift.pos < 0.5 ? 1 : -1;
@@ -504,10 +477,25 @@ export function tryUse(
     }
   }
 
-  if (getTile(map, fx, fy) === Tile.SecretWall) {
-    map.tiles[iy * map.width + ix] = Tile.Empty;
-    secret = true;
-    map.secretsFound = Math.min(map.secretsTotal, map.secretsFound + 1);
+  // Push secret walls in front / adjacent
+  const secretTargets = [
+    [ix, iy],
+    [Math.floor(px), Math.floor(py)],
+    [Math.floor(fx), Math.floor(fy)],
+  ];
+  for (let oy = -1; oy <= 1; oy++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      secretTargets.push([Math.floor(px) + ox, Math.floor(py) + oy]);
+      secretTargets.push([ix + ox, iy + oy]);
+    }
+  }
+  for (const [sx, sy] of secretTargets) {
+    if (sx < 0 || sy < 0 || sx >= map.width || sy >= map.height) continue;
+    if (map.tiles[sy * map.width + sx] === Tile.SecretWall) {
+      map.tiles[sy * map.width + sx] = Tile.Empty;
+      secret = true;
+      map.secretsFound = Math.min(map.secretsTotal, map.secretsFound + 1);
+    }
   }
 
   return { openedDoor, usedSwitch, secret, needKey };

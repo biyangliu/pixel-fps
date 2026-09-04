@@ -195,7 +195,8 @@ export function sampleWall(
   else if (texId === 7) idx = 6; // red door
   else if (texId === 8) idx = 7; // yellow
   else if (texId === 9) idx = 8; // blue
-  else if (texId === 12) idx = 9; // switch
+  else if (texId === 12) idx = 9; // switch off
+  else if (texId === 100) idx = 10; // switch on
   else if (texId === 13) idx = 0; // secret wall looks like brick
   else idx = 0;
 

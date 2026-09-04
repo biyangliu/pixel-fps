@@ -120,7 +120,7 @@ export function drawHUD(
     ctx.font = '8px monospace';
     const elapsed = Math.max(0, (performance.now() - player.startTime) / 1000);
     centerText(ctx, `Kills ${player.kills}   Score ${player.score}`, w, 62);
-    centerText(ctx, `Secrets ${player.secrets}   Items ${player.itemsPicked}`, w, 76);
+    centerText(ctx, `Secrets ${player.secrets}/2   Items ${player.itemsPicked}`, w, 76);
     centerText(ctx, `Time ${elapsed | 0}s   Skill ${SKILL_NAMES[player.skill]}`, w, 90);
     centerText(ctx, `HP ${player.hp}  ARMOR ${player.armor}`, w, 104);
     ctx.fillStyle = '#aaddcc';
@@ -177,6 +177,7 @@ function drawStatusBar(
   ctx.fillStyle = '#ffcc44';
   ctx.font = 'bold 13px monospace';
   ctx.fillText(ammo.padStart(3, ' '), 6, y0 + 26);
+  ctx.font = '7px monospace';
   ctx.font = '7px monospace';
 
   ctx.fillStyle = '#887755';

@@ -1,8 +1,8 @@
 # Sector Zero (Pixel FPS)
 
-A browser **spiritual successor** to classic 90s shareware FPS design DNA — one dense, hand-authored episode that aims for the *feel* of what that era’s designers would ship next: weapon-ladder satisfaction, key-gated tension, monster closets, secret delight, and a dirty tech-hell atmosphere.
+A browser **spiritual successor** to classic 90s shareware FPS design DNA — one dense, hand-authored episode that aims for the *feel* of what that era's designers would ship next: weapon-ladder satisfaction, key-gated tension, monster closets, secret delight, and a dirty tech-hell atmosphere.
 
-**Not a remake.** Original map, original procedural art, synthesized audio. Systems parity with the genre’s classics — not cloned content.
+**Not a remake.** Original map, original procedural art, synthesized audio. Systems parity with the genre's classics — not cloned content.
 
 Built with **Vite + TypeScript** and a Canvas **2.5D raycaster** (floor/ceiling flats, height-aware doors & lifts, billboard actors, projectiles, screen shake).
 
@@ -32,16 +32,17 @@ Production build: run the `build` script (`tsc && vite build`), then preview.
 | Esc | Pause |
 | Skill screen | `1`–`4` then click |
 
-## What you’ll feel
+## Episode flow (verified)
 
-- **Dark barracks cold open** — pistol, troopers, stim; learn the gun before the storm.
-- **Shotgun moment** — grab it, then a closet dump teaches paranoia.
-- **Red key pressure** — hold a room, gate the hub, push into imp galleries with real sightlines.
-- **Yellow wing floaters** — plasma tease, souls screaming in, keycard tension.
-- **Lower arsenal** — chaingun / rockets / demon rush; optional berserk+chainsaw power fantasy.
-- **Lift commit** — switch, rise, blue key antechamber.
-- **Baron climax** — support cast, BFG-tier payoff, glowing exit pad.
-- **Secrets that pay** — blur / invuln niches, not empty boxes.
+1. **Dark barracks** — pistol, troopers, stim; learn move/shoot.
+2. **Shotgun alcove** — grab the boomstick; closet trap teaches paranoia.
+3. **Red key room** — hold the pocket, take the card, open the **RED** door east.
+4. **Chaingun + yellow key** — galleries, floaters, plasma tease behind the card.
+5. **YELLOW door** — lift switch corridor, megaarmor, **BLUE** key.
+6. **Optional lower arsenal** — chainsaw, berserk, rockets, demon rush closets.
+7. **Secrets** — push two unmarked walls for blur + invuln stashes.
+8. **BLUE door climax** — baron + support, BFG-tier payoff, glowing exit pad.
+9. **Intermission** — kills, secrets, items, time, skill.
 
 ## Systems (one map)
 
@@ -51,7 +52,7 @@ Production build: run the `build` script (`tsc && vite build`), then preview.
 
 **Items:** stim/med/bonus, armor/megaarmor, soulsphere-like, berserk, blur, invuln, light-amp, all ammo, full weapon pickups.
 
-**Flow:** RYB keys & doors, free doors (vertical open), lift+switch, ≥2 secrets, exit pad. Intermission stats.
+**Flow:** RYB keys & doors, free doors (vertical open), lift+switch, 2 secrets, exit pad. Intermission stats.
 
 **HUD:** ammo, health, reactive face, armor, arms 1–7, RYB keys, directional damage vignette, gunshot light bumps.
 

@@ -117,6 +117,10 @@ export function renderFrame(
       const tile = map.tiles[mapY * map.width + mapX];
       if (!isPassableForRay(map, mapX, mapY)) {
         texId = tile === Tile.Switch ? Tile.Switch : tile;
+        if (tile === Tile.Switch) {
+          const sw = map.switches.find((s) => s.x === mapX && s.y === mapY);
+          texId = sw?.on ? 100 : 12; // 100 → on texture
+        }
         if (tile === Tile.Door || tile === Tile.DoorRed || tile === Tile.DoorYellow || tile === Tile.DoorBlue) {
           const d = doorAt(map, mapX, mapY);
           doorOpen = d ? d.open : 0;

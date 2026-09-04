@@ -181,7 +181,7 @@ export function updateEnemies(
         tryEnemyMove(map, e, e.x + (dx / dist) * e.speed * dt, e.y + (dy / dist) * e.speed * dt);
       } else if (e.attackCooldown <= 0) {
         e.state = 'attack';
-        damagePlayer(player, e.type === 'demon' ? 18 : 12);
+        damagePlayer(player, e.type === 'demon' ? 18 : 12, e.x, e.y);
         sfxHurt();
         e.attackCooldown = e.type === 'demon' ? 0.7 : 0.5;
       }
@@ -199,7 +199,7 @@ export function updateEnemies(
         let hit = false;
         for (let i = 0; i < pellets; i++) {
           if (Math.random() > (invis ? 0.55 : 0.22)) {
-            damagePlayer(player, dmg);
+            damagePlayer(player, dmg, e.x, e.y);
             hit = true;
           }
         }
@@ -240,7 +240,7 @@ export function updateEnemies(
       if (e.attackCooldown <= 0 && dist < 14 && canSee(map, e.x, e.y, player.x, player.y)) {
         e.state = 'attack';
         if (dist < 1.4) {
-          damagePlayer(player, 28);
+          damagePlayer(player, 28, e.x, e.y);
           sfxHurt();
         } else {
           const spd = 6;
@@ -320,7 +320,7 @@ export function updateProjectiles(
 
     if (!hit && p.fromEnemy) {
       if (Math.hypot(p.x - player.x, p.y - player.y) < player.radius + p.radius) {
-        damagePlayer(player, p.damage);
+        damagePlayer(player, p.damage, p.x, p.y);
         sfxHurt();
         hit = true;
       }

@@ -295,7 +295,7 @@ export function updatePlayer(
     const r = tryUse(map, player.x, player.y, player.angle, player.keys);
     if (r.openedDoor) { sfxDoor(); message = 'DOOR OPENED'; }
     if (r.usedSwitch) { sfxSwitch(); message = 'SWITCH'; }
-    if (r.secret) { sfxSecret(); player.secrets++; message = 'A SECRET IS REVEALED!'; }
+    if (r.secret) { sfxSecret(); player.secrets = map.secretsFound; message = 'A SECRET IS REVEALED!'; }
     if (r.needKey) message = `NEED ${r.needKey.toUpperCase()} KEY`;
   }
 
@@ -365,9 +365,11 @@ export function updatePlayer(
         player.pickupFlash = 0.2;
         player.itemsPicked++;
         if (p.secret) {
-          player.secrets++;
-          map.secretsFound++;
-          message = 'SECRET!';
+          if (map.secretsFound < map.secretsTotal) {
+            map.secretsFound++;
+            player.secrets = map.secretsFound;
+          }
+          message = 'SECRET STASH!';
           sfxSecret();
         }
       }
