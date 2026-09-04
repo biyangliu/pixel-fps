@@ -1,5 +1,5 @@
 import { createLevel, resetPickups, type LevelMap } from './map';
-import { createPlayer, resetPlayer, updatePlayer, type Player } from './player';
+import { createPlayer, resetPlayer, updatePlayer, type Player, type Skill } from './player';
 import {
   createEnemies,
   createProjectiles,
@@ -10,10 +10,12 @@ import {
   type Projectile,
 } from './enemies';
 import { createTextures, type TextureBank } from './textures';
-import { createInput, consumePause, consumeClickToStart, type InputState } from './input';
+import {
+  createInput, consumePause, consumeClickToStart, consumeMenuSelect, type InputState,
+} from './input';
 import { renderFrame } from './renderer';
 import { drawHUD, type GamePhase } from './ui';
-import { sfxWin, sfxLose } from './audio';
+import { sfxWin, sfxLose, startAmbient, stopAmbient, sfxDoor } from './audio';
 
 const INTERNAL_W = 320;
 const INTERNAL_H = 200;
@@ -33,6 +35,8 @@ export class Game {
   private startArmed = false;
   private toast: string | null = null;
   private toastTimer = 0;
+  private skillCursor: Skill = 3;
+  private lastGunshot = false;
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d', { alpha: false });
@@ -41,7 +45,7 @@ export class Game {
     this.ctx.imageSmoothingEnabled = false;
 
     this.map = createLevel();
-    this.player = createPlayer(this.map.spawn);
+    this.player = createPlayer(this.map.spawn, this.skillCursor);
     this.enemies = createEnemies(this.map);
     this.projectiles = createProjectiles();
     this.textures = createTextures();
@@ -57,21 +61,22 @@ export class Game {
   }
 
   private resetLevel(): void {
-    // Recreate map tiles so doors relock cleanly
     this.map = createLevel();
     resetPickups(this.map);
-    resetPlayer(this.player, this.map.spawn);
+    resetPlayer(this.player, this.map.spawn, this.skillCursor);
     this.enemies = createEnemies(this.map);
     this.projectiles = createProjectiles();
     this.toast = null;
     this.toastTimer = 0;
+    this.lastGunshot = false;
   }
 
   private beginPlay(): void {
     this.resetLevel();
     this.phase = 'playing';
     this.startArmed = false;
-    this.showToast('ENTER THE COMPLEX');
+    startAmbient();
+    this.showToast('ENTER SECTOR ZERO');
   }
 
   private showToast(msg: string, time = 2.2): void {
@@ -83,10 +88,8 @@ export class Game {
     if (!this.running) return;
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
-
     this.update(dt);
     this.draw();
-
     requestAnimationFrame(this.frame);
   };
 
@@ -100,10 +103,34 @@ export class Game {
       this.startArmed = true;
     }
 
-    if (this.phase === 'title' || this.phase === 'win' || this.phase === 'lose') {
+    const menuSel = consumeMenuSelect(this.input);
+    if (menuSel && menuSel >= 1 && menuSel <= 4) {
+      this.skillCursor = menuSel as Skill;
+    }
+
+    if (this.phase === 'title') {
+      consumePause(this.input);
+      if (this.startArmed) {
+        this.startArmed = false;
+        this.phase = 'skill';
+      }
+      return;
+    }
+
+    if (this.phase === 'skill') {
       consumePause(this.input);
       if (this.startArmed) {
         this.beginPlay();
+      }
+      return;
+    }
+
+    if (this.phase === 'win' || this.phase === 'lose') {
+      consumePause(this.input);
+      if (this.startArmed) {
+        this.phase = 'skill';
+        this.startArmed = false;
+        stopAmbient();
       }
       return;
     }
@@ -124,37 +151,52 @@ export class Game {
       return;
     }
 
-    const hadKey = this.player.hasKey;
-    const { fired, reachedExit, openedDoor } = updatePlayer(
+    const hadKeys = { ...this.player.keys };
+    const { fired, reachedExit, message } = updatePlayer(
       this.player,
       this.map,
       this.input,
       dt,
     );
 
-    if (!hadKey && this.player.hasKey) {
-      this.showToast('GOT THE KEY! FIND EXIT DOORS');
-    }
-    if (openedDoor) {
-      this.showToast('DOOR UNLOCKED');
+    if (!hadKeys.red && this.player.keys.red) this.showToast('RED KEYCARD');
+    if (!hadKeys.yellow && this.player.keys.yellow) this.showToast('YELLOW KEYCARD');
+    if (!hadKeys.blue && this.player.keys.blue) this.showToast('BLUE KEYCARD');
+    if (message) this.showToast(message, 1.8);
+
+    // Closet release: wake dormant trap monsters near the player
+    if (message === 'TRAP!' || message === 'INCOMING!' || message === 'AMBUSH!') {
+      sfxDoor();
+      for (const e of this.enemies) {
+        if (!e.alive || !e.closet) continue;
+        if (Math.hypot(e.x - this.player.x, e.y - this.player.y) < 10) {
+          e.closet = false;
+          e.alerted = true;
+        }
+      }
     }
 
-    if (fired) playerShoot(this.enemies, this.map, this.player, this.player.currentWeapon);
+    if (fired) {
+      playerShoot(this.enemies, this.projectiles, this.map, this.player, this.player.currentWeapon);
+      this.lastGunshot = true;
+    }
 
-    updateEnemies(this.enemies, this.map, this.player, this.projectiles, dt);
-    updateProjectiles(this.projectiles, this.map, this.player, dt);
+    updateEnemies(this.enemies, this.map, this.player, this.projectiles, dt, this.lastGunshot);
+    this.lastGunshot = false;
+    updateProjectiles(this.projectiles, this.enemies, this.map, this.player, dt);
 
     if (this.player.hp <= 0) {
       this.phase = 'lose';
       sfxLose();
+      stopAmbient();
       if (document.pointerLockElement) document.exitPointerLock();
       return;
     }
 
-    // Win only by reaching the exit (after fighting through / unlocking path)
     if (reachedExit) {
       this.phase = 'win';
       sfxWin();
+      stopAmbient();
       if (document.pointerLockElement) document.exitPointerLock();
     }
   }
@@ -188,6 +230,7 @@ export class Game {
       this.enemies,
       this.phase,
       this.phase === 'playing' ? this.toast : null,
+      this.skillCursor,
     );
   }
 }
